@@ -6,9 +6,11 @@ int factor = 800;
 
 #define NUM 1
 #define WAITCOUNT 5
-#define THRESHCOUNT 30
+#define THRESHCOUNT 15
 
 int b_pin = 7;
+int b_led = 2;
+int alert_led = 4;
 int state = 0;
 static int switchFlag = 0;
 static int fixedBPM;
@@ -23,7 +25,7 @@ int max = 0, min = 1000, thresh = 0, thresh_flag = 0;
 
 static int detect_flag = 0;
 int breath = 0;
-int compare_before = 0, compare_current = 0;
+static int compare_before = 0, compare_current = 0;
 
 float bpmNow=0, bpmBefore=0;
 float lastBreathTime=0, currentBreathTime=0;
@@ -32,6 +34,8 @@ void setup() {
 
   Serial.begin(115200);
   pinMode(b_pin, INPUT);
+  pinMode(b_led, OUTPUT);
+  pinMode(alert_led, OUTPUT);
 
   // BUILT IN ACCELEROMETER SETUP
   CurieIMU.begin();
@@ -70,12 +74,14 @@ void loop() {
   roll = filter.getRoll();
   pitch = filter.getPitch();
   heading = filter.getYaw();
+  /*
   Serial.print("Orientation: ");
   Serial.print(heading);
   Serial.print(" ");
   Serial.print(pitch);
   Serial.print(" ");
   Serial.println(roll);
+  */
 
   // READ SWITCH STATE
   state = digitalRead(b_pin);  // state of tact switch
@@ -90,11 +96,11 @@ void loop() {
   //Serial.println(ain);
 
   //CALCULATE AVERAGE
-  if(count <  WAITCOUNT){//COLLECT DATA FOR AVERAGE
+  if(count <  WAITCOUNT){   //COLLECT DATA FOR AVERAGE
     temp[count] = ain;
     count++;
   }
-  else{//GET AVERAGE & THRESH & PLOT TO GRAPH
+  else{   //READY TO CALCULATE AVERAGE
    int average = 0;
    for(int i = 0; i < WAITCOUNT; i++){
     average += temp[i];
@@ -115,7 +121,7 @@ void loop() {
      //Serial.println("MAX: " + max + " MIN: " + min);
     }
    else{
-    if(detect_flag == 0) detect_flag = 1;
+    if(detect_flag == 0) detect_flag = 1;   //DETECTED FIRST THRESHOLD
     thresh = (max+min) / 2;
     max = 0;
     min = 1000;
@@ -128,10 +134,12 @@ void loop() {
     compare_before = compare_current;
     compare_current = average;
     //Serial.println("comparing");
-    if(compare_before > thresh && compare_current < thresh){
+    if(compare_before > thresh && compare_current <= thresh){
       breath++;
       Serial.print(timer / 1000);
       Serial.println(",BREATH_DETECTED");
+      digitalWrite(b_led, HIGH);    //blink LED
+      delay(100);
       lastBreathTime = currentBreathTime;
       currentBreathTime = timer;
       bpmBefore = bpmNow;
@@ -140,6 +148,7 @@ void loop() {
       Serial.print("BPM: ");
       Serial.println(bpmNow);
     }
+    digitalWrite(b_led, LOW);
   }
 
   if(switchFlag == 1){
@@ -149,40 +158,49 @@ void loop() {
   }
 
   if(fixedBPM > 0){
-    if(abs(fixedBPM - bpmNow) > 3){//if current BPM differs greatly from fixed BPM
+    if(abs(fixedBPM - bpmNow) > 6){   //if current BPM differs greatly from fixed BPM
+      digitalWrite(alert_led, HIGH);  //blink alert LED
+      delay(100);
       float duration = ((float)60 / (float)fixedBPM) / (float)2 * (float)1000;
       Serial.print("fixedBPM: ");
       Serial.println(fixedBPM);
       Serial.print("Duration: ");
       Serial.println(duration);
       if(breathFlag == 0){
-        timer2 = millis();
+        timer2 = millis();  //breath start time set
         breathFlag = 1;
+        analogWrite(9, 0);
       }
       else if(breathFlag==1){
         if (millis() - timer2 < duration) {
-          analogWrite(9, 130);
         }
-        else breathFlag = 2;
-        Serial.println(millis() - timer2);
+        else{
+          breathFlag = 2;
+          analogWrite(9, 150);  //short vibration in between breath
+        }
+        //Serial.println(millis() - timer2);
       }
       else if(breathFlag == 2){
-        timer3 = millis();
+        timer3 = millis();  //breath end time set
         breathFlag = 3;
+        analogWrite(9, 0);
       }
       else if(breathFlag==3){
         if (millis() - timer3 < duration) {
-          analogWrite(9, 0);
         }
-        else breathFlag = 0;
-        Serial.println(millis() - timer3);
+        else{
+          breathFlag = 0;
+          analogWrite(9, 150);  //short vibration in between breath
+        }
+        //Serial.println(millis() - timer3);
       }
       Serial.print("BREATH FLAG: ");
       Serial.println(breathFlag);
     }//close if(abs(fixedBPM - bpmNow) > 3)
     else analogWrite(9, 0);
+    digitalWrite(alert_led, LOW);
    }//close if fixedBPM>0
-  }//close else
+  }//close else //READY TO CALCULATE AVERAGE
   
   delay(100);
 }
